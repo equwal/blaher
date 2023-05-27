@@ -1,57 +1,36 @@
 (defpackage :blah
   (:use :common-lisp)
-  (:export :blah :blaher))
+  (:export #:blah #:blaher))
 
 (in-package :blah)
 
-(defmacro with-nil-as-string-output-stream ((stream) &body body)
-  (let ((orig-stream (gensym "ORIG-STREAM.")))
-    `(let ((,orig-stream ,stream)
-           (,stream (or ,stream (make-string-output-stream))))
-       (locally ,@body)
-       (unless ,orig-stream
-         (get-output-stream-string ,stream)))))
-
 (defun blah (stream template &rest args)
-  (with-nil-as-string-output-stream (stream)
-    (loop for x in (parse-blah template) do
-          (cond ((symbolp x)
-                 (princ (getf args x) stream))
-                (t
-                 (princ x stream))))))
+  (loop for x in (parse-blah template) do (princ (getf args x x) stream)))
 
 (define-compiler-macro blah (&whole whole stream template &rest args)
-  (cond ((stringp template)             ;constantp?
-         `(funcall (blaher ,template) ,stream ,@args))
-        (t
-         whole)))
+  (if (stringp template)
+      `(funcall (blaher ,template) ,stream ,@args)
+      whole))
 
 (defmacro blaher (template)
-  (let ((template (parse-blah template)))
-    (let ((stream (gensym "STREAM."))
-          (params (mapcar #'(lambda (x) (list x (gensym)))
-                          (remove-duplicates
-                           (remove-if-not #'symbolp template)))))
-      `(lambda (,stream &key ,@(mapcar #'list params))
-         (with-nil-as-string-output-stream (,stream)
-           ,@(mapcar (lambda (x)
-                       (cond ((stringp x)
-                              `(write-string ,x ,stream))
-                             (t
-                              `(princ ,(cadr (assoc x params)) ,stream))))
-                     template))))))
+  (let* ((template (parse-blah template))
+         (stream (gensym "STREAM."))
+         (params (mapcar #'(lambda (x) (list x (gensym)))
+                         (remove-duplicates
+                          (remove-if-not #'symbolp template)))))
+    `(lambda (,stream &key ,@(mapcar #'list params))
+       ,@(mapcar (lambda (x)
+                   `(princ ,(if (symbolp x) (cadr (assoc x params)) x) ,stream))
+                 template))))
 
 (defun parse-blah (string &optional (start 0) (end (length string)))
   (let* ((p1 (search "{{" string :start2 start :end2 end))
          (p2 (and p1 (search "}}" string :start2 p1 :end2 end))))
-    (cond ((and p1 p2)
-           (list* (subseq string start p1)
-                  (intern (string-upcase
-                           (subseq string (+ p1 2) p2))
-                          :keyword)
-                  (parse-blah string (+ p2 2) end)))
-          (t
-           (list (subseq string start end))))))
+    (cons (subseq string start (if p2 p1 end))
+          (and p2 (cons (intern (string-upcase
+                                 (subseq string (+ p1 2) p2))
+                                :keyword)
+                        (parse-blah string (+ p2 2) end))))))
 
 ;; (with-output-to-string (bag) (blah bag "Hi {{person}}!" :person "Joe")) => "Hi Joe!"
 
@@ -65,13 +44,12 @@
 
 ;; macro expands to:
 
-;; (LAMBDA (#:STREAM.6174 &KEY ((:COMPUTER-ASSISTANT #:G6175))
-;;          ((:PERSON #:G6176)))
-;;   (WRITE-STRING "Hi " #:STREAM.6174)
-;;   (PRINC #:G6176 #:STREAM.6174)
-;;   (WRITE-STRING "! I am " #:STREAM.6174)
-;;   (PRINC #:G6175 #:STREAM.6174)
-;;   (WRITE-STRING ", here to help you, " #:STREAM.6174)
-;;   (PRINC #:G6176 #:STREAM.6174)
-;;   (WRITE-STRING ", with all of your problems." #:STREAM.6174))
-
+;; (LAMBDA (#:STREAM.6790 &KEY ((:COMPUTER-ASSISTANT #:G6791))
+;;          ((:PERSON #:G6792)))
+;;   (PRINC "Hi " #:STREAM.6790)
+;;   (PRINC #:G6792 #:STREAM.6790)
+;;   (PRINC "! I am " #:STREAM.6790)
+;;   (PRINC #:G6791 #:STREAM.6790)
+;;   (PRINC ", here to help you, " #:STREAM.6790)
+;;   (PRINC #:G6792 #:STREAM.6790)
+;;   (PRINC ", with all of your problems." #:STREAM.6790))
