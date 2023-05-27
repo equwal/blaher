@@ -32,14 +32,6 @@
                                 :keyword)
                         (parse-blah string (+ p2 2)))))))
 
-;; (with-output-to-string (bag) (blah bag "Hi {{person}}!" :person "Joe")) => "Hi Joe!"
-
-;; (blah t "Hi {{person}}! I am {{computer-assistant}}, here to help you, {{person}}, with all of your problems."
-;;      :person "Fred"
-;;      :computer-assistant "Eliza")
-
-;; => Hi Fred! I am Eliza, here to help you, Fred, with all of your problems.
-
 ;; (blaher "Hi {{person}}! I am {{computer-assistant}}, here to help you, {{person}}, with all of your problems.")
 
 ;; macro expands to:
