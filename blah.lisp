@@ -1,7 +1,24 @@
+(defpackage :blah
+  (:use :common-lisp)
+  (:export :blah :blaher))
+
+(in-package :blah)
+
+(defmacro with-nil-as-string-output-stream ((stream) &body body)
+  (let ((orig-stream (gensym "ORIG-STREAM.")))
+    `(let ((,orig-stream ,stream)
+           (,stream (or ,stream (make-string-output-stream))))
+       (locally ,@body)
+       (unless ,orig-stream
+         (get-output-stream-string ,stream)))))
+
 (defun blah (stream template &rest args)
-  (multiple-value-bind (format keys) (parse-blah template)
-    (apply #'format stream format (loop for key in keys
-                                        collect (getf args key)))))
+  (with-nil-as-string-output-stream (stream)
+    (loop for x in (parse-blah template) do
+          (cond ((symbolp x)
+                 (princ (getf args x) stream))
+                (t
+                 (princ x stream))))))
 
 (define-compiler-macro blah (&whole whole stream template &rest args)
   (cond ((stringp template)             ;constantp?
@@ -10,54 +27,51 @@
          whole)))
 
 (defmacro blaher (template)
-  (multiple-value-bind (format keys) (parse-blah template)
+  (let ((template (parse-blah template)))
     (let ((stream (gensym "STREAM."))
-          (args (gensym "ARGS."))
           (params (mapcar #'(lambda (x) (list x (gensym)))
-                          (remove-duplicates keys))))
+                          (remove-duplicates
+                           (remove-if-not #'symbolp template)))))
       `(lambda (,stream &key ,@(mapcar #'list params))
-         (format ,stream ,format ,@(mapcar #'(lambda (key)
-                                               (cadr (assoc key params)))
-                                           keys))))))
+         (with-nil-as-string-output-stream (,stream)
+           ,@(mapcar (lambda (x)
+                       (cond ((stringp x)
+                              `(write-string ,x ,stream))
+                             (t
+                              `(princ ,(cadr (assoc x params)) ,stream))))
+                     template))))))
 
 (defun parse-blah (string &optional (start 0) (end (length string)))
-  (labels ((format-escape (string)
-             (with-output-to-string (bag)
-               (loop for c across string do
-                     (when (eql c #\~) (write-char c bag))
-                     (write-char c bag)))))
-    (let* ((p1 (search "{{" string :start2 start :end2 end))
-           (p2 (and p1 (search "}}" string :start2 p1 :end2 end))))
-      (cond ((and p1 p2)
-             (multiple-value-bind (format args)
-                 (parse-blah string (+ p2 2) end)
-               (values (format nil "~A~~A~A"
-                               (format-escape (subseq string start p1))
-                               format)
-                       (cons (intern (string-upcase
-                                      (subseq string (+ p1 2) p2))
-                                     :keyword)
-                             args))))
-            (t
-             (values (format-escape (subseq string start end)) nil))))))
+  (let* ((p1 (search "{{" string :start2 start :end2 end))
+         (p2 (and p1 (search "}}" string :start2 p1 :end2 end))))
+    (cond ((and p1 p2)
+           (list* (subseq string start p1)
+                  (intern (string-upcase
+                           (subseq string (+ p1 2) p2))
+                          :keyword)
+                  (parse-blah string (+ p2 2) end)))
+          (t
+           (list (subseq string start end))))))
 
-;; (blah nil "Hi {{person}}!" :person "Joe") => "Hi Joe!"
+;; (with-output-to-string (bag) (blah bag "Hi {{person}}!" :person "Joe")) => "Hi Joe!"
 
-;; (blah nil "Hi {{person}}! I am {{computer-assistant}}, here to help you, {{person}}, with all of your problems."
+;; (blah t "Hi {{person}}! I am {{computer-assistant}}, here to help you, {{person}}, with all of your problems."
 ;;      :person "Fred"
 ;;      :computer-assistant "Eliza")
 
-;; => "Hi Fred! I am Eliza, here to help you, Fred, with all of your problems."
+;; => Hi Fred! I am Eliza, here to help you, Fred, with all of your problems.
 
 ;; (blaher "Hi {{person}}! I am {{computer-assistant}}, here to help you, {{person}}, with all of your problems.")
 
 ;; macro expands to:
 
-;; (LAMBDA (#:STREAM.5900 &KEY ((:COMPUTER-ASSISTANT #:G5902))
-;;          ((:PERSON #:G5903)))
-;;   (FORMAT #:STREAM.5900
-;;           "Hi ~A! I am ~A, here to help you, ~A, with all of your problems."
-;;           #:G5903
-;;           #:G5902
-;;           #:G5903))
+;; (LAMBDA (#:STREAM.6174 &KEY ((:COMPUTER-ASSISTANT #:G6175))
+;;          ((:PERSON #:G6176)))
+;;   (WRITE-STRING "Hi " #:STREAM.6174)
+;;   (PRINC #:G6176 #:STREAM.6174)
+;;   (WRITE-STRING "! I am " #:STREAM.6174)
+;;   (PRINC #:G6175 #:STREAM.6174)
+;;   (WRITE-STRING ", here to help you, " #:STREAM.6174)
+;;   (PRINC #:G6176 #:STREAM.6174)
+;;   (WRITE-STRING ", with all of your problems." #:STREAM.6174))
 
