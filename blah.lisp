@@ -20,17 +20,17 @@
                           (remove-if-not #'symbolp template)))))
     `(lambda (,stream &key ,@(mapcar #'list params))
        ,@(mapcar (lambda (x)
-                   `(princ ,(if (symbolp x) (cadr (assoc x params)) x) ,stream))
+                   `(princ ,(or (cadr (assoc x params)) x) ,stream))
                  template))))
 
-(defun parse-blah (string &optional (start 0) (end (length string)))
-  (let* ((p1 (search "{{" string :start2 start :end2 end))
-         (p2 (and p1 (search "}}" string :start2 p1 :end2 end))))
-    (cons (subseq string start (if p2 p1 end))
+(defun parse-blah (string &optional (start 0))
+  (let* ((p1 (search "{{" string :start2 start))
+         (p2 (and p1 (search "}}" string :start2 p1))))
+    (cons (subseq string start (and p2 p1))
           (and p2 (cons (intern (string-upcase
                                  (subseq string (+ p1 2) p2))
                                 :keyword)
-                        (parse-blah string (+ p2 2) end))))))
+                        (parse-blah string (+ p2 2)))))))
 
 ;; (with-output-to-string (bag) (blah bag "Hi {{person}}!" :person "Joe")) => "Hi Joe!"
 
